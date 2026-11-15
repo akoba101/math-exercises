@@ -1,0 +1,7 @@
+services:
+  server:
+    build: .
+    image: math-exercises:local
+    restart: unless-stopped
+    ports:
+      - "${MATH_EXERCISES_HOST_PORT:-8889}:8000"
