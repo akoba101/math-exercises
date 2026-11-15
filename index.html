@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fraction Practice</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+         padding: 24px; background: #eef3ef; color: #172d26; font: 16px system-ui, sans-serif; }
+  main { width: min(100%, 700px); padding: clamp(20px, 6vw, 42px); background: white;
+         border: 1px solid #d5e0d8; border-radius: 22px; box-shadow: 0 12px 40px #172d2610; }
+  h1 { margin: 0 0 24px; font-size: clamp(27px, 6vw, 38px); letter-spacing: -.04em; }
+  label { display: block; margin-bottom: 6px; font-weight: 650; }
+  input, button, select { font: inherit; border-radius: 9px; padding: 10px 12px; }
+  #answer { width: 100%; }
+  #answer, #count, #max-denominator { border: 1px solid #82958b; }
+  #max-denominator { width: 100%; max-width: 220px; }
+  .setting-label { margin-top: 12px; }
+  fieldset { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 12px;
+             border: 1px solid #d5e0d8; border-radius: 9px; }
+  legend { font-weight: 650; }
+  fieldset label { margin: 0; font-weight: normal; }
+  #problem { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 12px;
+             padding: 12px;
+             min-height: 140px; margin: 18px 0; border-radius: 12px; background: #edf5ee;
+             font-size: 32px; font-variant-numeric: tabular-nums; }
+  .fraction { display: grid; text-align: center; }
+  .operand { display: flex; align-items: center; gap: 5px; }
+  .parenthesis { font-size: 2.65em; line-height: 1; }
+  .term { display: flex; align-items: center; gap: 12px; }
+  .fraction span:first-child { border-bottom: 2px solid; padding: 0 8px 3px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  button { cursor: pointer; border: 1px solid #245b45; color: #245b45; background: white; font-weight: 650; }
+  button[type=submit] { background: #245b45; color: white; }
+  button:disabled { opacity: .5; cursor: default; }
+  #feedback { min-height: 1.5em; margin: 14px 0 0; white-space: pre-line; }
+</style>
+<main>
+  <h1>Fraction Practice</h1>
+  <fieldset id="types">
+    <legend>Fraction types</legend>
+    <label><input type="checkbox" value="proper" checked> Proper fractions</label>
+    <label><input type="checkbox" value="improper" checked> Improper fractions</label>
+    <label><input type="checkbox" value="mixed_number" checked> Mixed numbers</label>
+    <label><input type="checkbox" value="unity" checked> Unity fractions (e.g. 4/4)</label>
+  </fieldset>
+  <fieldset id="operations">
+    <legend>Operations</legend>
+    <label><input type="checkbox" value="+" checked> Addition</label>
+    <label><input type="checkbox" value="−" checked> Subtraction</label>
+    <label><input type="checkbox" value="×" checked> Multiplication</label>
+    <label><input type="checkbox" value="÷" checked> Division</label>
+  </fieldset>
+  <label for="count">Terms</label>
+  <select id="count">
+    <option selected>2</option>
+    <option>3</option>
+    <option>4</option>
+    <option>5</option>
+    <option>6</option>
+    <option>7</option>
+    <option>8</option>
+    <option>9</option>
+    <option>10</option>
+  </select>
+  <label class="setting-label" for="max-denominator">Maximum answer denominator</label>
+  <input id="max-denominator" type="text" inputmode="numeric" maxlength="30" placeholder="No limit">
+  <div id="problem" role="img" aria-label="Loading exercise"></div>
+  <form id="practice">
+    <label for="answer">Your answer</label>
+    <input id="answer" placeholder="e.g. 3/4, 2, or 2 1/3" autocomplete="off" required>
+    <div class="actions">
+      <button id="check" type="submit" disabled>Check answer</button>
+      <button id="show" type="button" disabled>Show answer</button>
+      <button id="next" type="button">New exercise</button>
+    </div>
+  </form>
+  <p id="feedback" role="status"></p>
+  <form id="worksheet" class="setting-label">
+    <label for="worksheet-count">Worksheet questions</label>
+    <input id="worksheet-count" type="number" min="1" max="50" value="12" required>
+    <button id="download" type="submit">Download worksheet PDF</button>
+    <p id="worksheet-status" role="status"></p>
+  </form>
+</main>
+<script>
+  const element = id => document.getElementById(id);
+  const count = element("count");
+  const maxDenominator = element("max-denominator");
+  const answer = element("answer");
+  const check = element("check");
+  const show = element("show");
+  const feedback = element("feedback");
+  const problem = element("problem");
+  const operationNames = {"+": "plus", "−": "minus", "×": "times", "÷": "divided by"};
+  let current;
+  let generation = 0;
+
+  function span(value, className = "") {
+    const node = document.createElement("span");
+    node.className = className;
+    node.textContent = value;
+    return node;
+  }
+
+  function showProblem({terms, operators, groups}) {
+    const starts = Array(terms.length).fill(0);
+    const ends = Array(terms.length).fill(0);
+    for (const [first, last] of groups) {
+      starts[first]++;
+      ends[last]++;
+    }
+    const spoken = terms.map(([numerator, denominator, whole], index) => {
+      const term = span("", "term");
+      if (index) term.append(span(operators[index - 1]));
+      const operand = span("", "operand");
+      const openingCount = starts[index];
+      const negative = (whole ?? numerator) < 0;
+      if (openingCount) operand.append(span("(".repeat(openingCount), "parenthesis"));
+      if (negative) operand.append(span("−"));
+      if (whole !== undefined) operand.append(span(Math.abs(whole)));
+      const fraction = span("", "fraction");
+      fraction.append(span(Math.abs(numerator)), span(denominator));
+      operand.append(fraction);
+      if (ends[index]) operand.append(span(")".repeat(ends[index]), "parenthesis"));
+      term.append(operand);
+      problem.append(term);
+      const spokenOperand = (negative ? "negative " : "") +
+        (whole === undefined ? "" : Math.abs(whole) + " and ") +
+        Math.abs(numerator) + " over " + denominator;
+      return "open parenthesis ".repeat(openingCount) + spokenOperand +
+        " close parenthesis".repeat(ends[index]);
+    });
+    problem.setAttribute("aria-label", spoken.map((term, index) =>
+      index ? operationNames[operators[index - 1]] + " " + term : term
+    ).join(" "));
+  }
+
+  function selected(group) {
+    return [...element(group).querySelectorAll("input:checked")].map(input => input.value);
+  }
+
+  function exerciseSettings(types, operations) {
+    const params = new URLSearchParams({count: count.value});
+    const limit = maxDenominator.value.trim();
+    if (limit) params.set("max_denominator", limit);
+    types.forEach(type => params.append("type", type));
+    operations.forEach(operation => params.append("op", operation));
+    return params;
+  }
+
+  function answerForms(reduced) {
+    const [numeratorText, denominatorText = "1"] = reduced.split("/");
+    const numerator = BigInt(numeratorText);
+    const denominator = BigInt(denominatorText);
+    const magnitude = numerator < 0n ? -numerator : numerator;
+    const whole = magnitude / denominator;
+    const remainder = magnitude % denominator;
+    const mixed = whole && remainder
+      ? (numerator < 0n ? "-" : "") + whole + " " + remainder + "/" + denominator
+      : reduced;
+    return "Reduced fraction: " + reduced + "\nMixed form: " + mixed;
+  }
+
+  async function newExercise() {
+    const request = ++generation;
+    current = null;
+    check.disabled = true;
+    show.disabled = true;
+    problem.replaceChildren();
+    problem.setAttribute("aria-label", "No exercise");
+    answer.value = "";
+    const types = selected("types");
+    const operations = selected("operations");
+    if (!types.length || !operations.length) {
+      feedback.textContent = "Select at least one fraction type and one operation.";
+      return;
+    }
+    feedback.textContent = "Loading exercise…";
+    const params = exerciseSettings(types, operations);
+    try {
+      const response = await fetch("/exercise?" + params);
+      const exercise = await response.json();
+      if (request !== generation) return;
+      if (!response.ok) {
+        feedback.textContent = exercise.error || "Could not load an exercise. Try again.";
+        return;
+      }
+      current = exercise;
+      showProblem(exercise);
+      feedback.textContent = "";
+      check.disabled = false;
+      show.disabled = false;
+    } catch {
+      if (request === generation) feedback.textContent = "Could not load an exercise. Try again.";
+    }
+  }
+
+  element("practice").addEventListener("submit", async event => {
+    event.preventDefault();
+    const exercise = current;
+    if (!exercise || check.disabled) return;
+    check.disabled = true;
+    try {
+      const response = await fetch("/check", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({answer: answer.value, expected: exercise.answer})
+      });
+      const result = await response.json();
+      if (current !== exercise || show.disabled) return;
+      feedback.textContent = result.error || (result.correct
+        ? "Correct!\n" + answerForms(result.simplified)
+        : "Try again.");
+    } catch {
+      if (current === exercise && !show.disabled) feedback.textContent = "Could not check your answer. Try again.";
+    } finally {
+      if (current === exercise && !show.disabled) check.disabled = false;
+    }
+  });
+
+  show.addEventListener("click", () => {
+    feedback.textContent = answerForms(current.answer);
+    show.disabled = true;
+    check.disabled = true;
+  });
+  for (const group of ["types", "operations"]) {
+    element(group).addEventListener("change", event => {
+      if (!selected(group).length) {
+        event.target.checked = true;
+        feedback.textContent = group === "types"
+          ? "Keep at least one fraction type selected."
+          : "Keep at least one operation selected.";
+        return;
+      }
+      newExercise();
+    });
+  }
+  count.addEventListener("change", newExercise);
+  maxDenominator.addEventListener("change", newExercise);
+  element("next").addEventListener("click", newExercise);
+  element("worksheet").addEventListener("submit", async event => {
+    event.preventDefault();
+    const button = element("download");
+    const status = element("worksheet-status");
+    button.disabled = true;
+    status.textContent = "Generating worksheet…";
+    try {
+      const params = exerciseSettings(selected("types"), selected("operations"));
+      params.set("questions", element("worksheet-count").value);
+      const response = await fetch("/worksheet.pdf?" + params);
+      if (!response.ok) throw new Error((await response.json()).error);
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "fraction-worksheet.pdf";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      status.textContent = "Worksheet ready.";
+    } catch (error) {
+      status.textContent = error.message || "Could not download the worksheet.";
+    } finally {
+      button.disabled = false;
+    }
+  });
+  window.addEventListener("pageshow", () => {
+    for (const checkbox of document.querySelectorAll("#types input, #operations input")) {
+      checkbox.checked = true;
+    }
+    count.value = "2";
+    maxDenominator.value = "";
+    element("worksheet-count").value = "12";
+    newExercise();
+  });
+</script>
+</html>
